@@ -25,7 +25,6 @@ import edu.tcu.sameepshah.weather.model.WeatherResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -48,11 +47,9 @@ class MainActivity : AppCompatActivity() {
             ActivityResultContracts.RequestPermission()
         ) { isGranted: Boolean ->
             if (isGranted) {
-                // generate a Snackbar message
                 Snackbar.make(view, getString(R.string.location_permission_granted), Snackbar.LENGTH_SHORT).show()
-                updateLocationAndWeatherRepeatedly()
+//                updateLocationAndWeatherRepeatedly()
             } else {
-                // generate a Snackbar message
                 Snackbar.make(view, getString(R.string.location_permission_denied), Snackbar.LENGTH_SHORT).show()
             }
         }
@@ -93,7 +90,6 @@ class MainActivity : AppCompatActivity() {
             }
             ActivityCompat.shouldShowRequestPermissionRationale(
                 this, Manifest.permission.ACCESS_COARSE_LOCATION) -> {
-                // generate the Snackbar to explain
                 // if Ok is clicked, show the prompt/launcher
                 Snackbar.make(view, getString(R.string.location_permission_required), Snackbar.LENGTH_INDEFINITE)
                     .setAction("OK") {
@@ -119,11 +115,11 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             while(true) {
                 // IO cannot deal with UI, so we need to put something in the main call routine
-                withContext(Dispatchers.Main) {
+                launch(Dispatchers.Main) {
                     updateLocationAndWeather()
-                    cancelRequests()
                 }
                 delay(15000)
+                cancelRequests()
             }
         }
     }
@@ -134,14 +130,12 @@ class MainActivity : AppCompatActivity() {
                 this,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) -> {
-                updateLocationAndWeatherRepeatedly()
                 cancellationTokenSource = CancellationTokenSource()
-                fusedLocationClient . getCurrentLocation (
+                fusedLocationClient.getCurrentLocation (
                     Priority.PRIORITY_HIGH_ACCURACY,
-                    cancellationTokenSource?.token).addOnSuccessListener { it ->
+                    cancellationTokenSource?.token).addOnSuccessListener {
                         if (it != null) {
                             updateWeather(it)
-                            updatePlace(it)
                         } else {
                             displayUpdateFailed()
                         }
@@ -175,7 +169,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePlace(location: Location) {
-        geoServiceCall = GeoService.getGeo(
+        geoServiceCall = geoService.getGeo(
             location.latitude,
             location.longitude,
             getString(R.string.appid)
@@ -186,7 +180,7 @@ class MainActivity : AppCompatActivity() {
                     val geoResponseNullable = response.body()
                     if(geoResponseNullable != null) {
                         geoResponse = geoResponseNullable
-                        displayWeather()
+                        displayPlace(false)
                     }
                 }
                 override fun onFailure(p0: Call<List<Place>>, p1: Throwable) {
@@ -196,7 +190,9 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun displayUpdateFailed() {}
+    private fun displayUpdateFailed() {
+        println("Check your API key.")
+    }
 
     private fun displayPlace(isSuccess: Boolean) {
         binding.placeTv.text = getString(R.string.place, geoResponse[0].name, geoResponse[0].state)
@@ -213,7 +209,39 @@ class MainActivity : AppCompatActivity() {
                 weatherResponse.main.temp_max,
                 weatherResponse.main.temp_min)
 
-        val utcInMs = (weatherResponse.sys.sunrise + weatherResponse.timezone) * 1000L - TimeZone.getDefault().rawOffset
-        val sunrise = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(utcInMs))
+        val utcInMsSunrise = (weatherResponse.sys.sunrise + weatherResponse.timezone) * 1000L - TimeZone.getDefault().rawOffset
+        val utcInMsSunset = (weatherResponse.sys.sunset + weatherResponse.timezone) * 1000L - TimeZone.getDefault().rawOffset
+        val sunrise = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(utcInMsSunrise))
+        val sunset = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(utcInMsSunset))
+        binding.sunDataTv.text = getString(R.string.sun_data).format(sunrise, sunset)
+
+        val speed = weatherResponse.wind.speed
+        val direction = weatherResponse.wind.deg
+        val gust = weatherResponse.wind.gust
+        binding.windDataTv.text = getString(R.string.wind_data, speed, direction, gust)
+
+        val humidity = weatherResponse.main.humidity
+        val cloudiness = weatherResponse.clouds.all
+        binding.precipitationDataTv.text = getString(R.string.precipitation_data, humidity, cloudiness)
+
+        val feelsLike = weatherResponse.main.feels_like
+        val visibility = weatherResponse.visibility
+        val pressure = weatherResponse.main.pressure
+        binding.otherDataTv.text = getString(R.string.other_data,
+            feelsLike, metersToMiles(visibility), hpaToinHg(pressure))
+
+        val icon = "ic_" + weatherResponse.weather[0].icon
+        with(binding) { conditionIv.setImageResource(resources.getIdentifier(icon, "drawable", packageName)) }
+
+        val temp = weatherResponse.main.temp
+        binding.temperatureTv.text = getString(R.string.temperature, temp)
+    }
+
+    private fun metersToMiles(meters: Int) : Double {
+        return (meters / 1609.34)
+    }
+
+    private fun hpaToinHg(hpa : Int) : Double {
+        return (hpa / 33.863886666667)
     }
 }
