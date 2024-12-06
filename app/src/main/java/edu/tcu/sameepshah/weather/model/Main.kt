@@ -2,11 +2,11 @@ package edu.tcu.sameepshah.weather.model
 
 data class Main(
     val temp: Double,
-    val feels_like: Double,
+    val feelsLike: Double,
     val pressure: Int,
     val humidity: Int,
-    val temp_min: Double,
-    val temp_max: Double,
-    val sea_level: Int,
-    val grnd_level: Int
+    val tempMin: Double,
+    val tempMax: Double,
+    val seaLevel: Int,
+    val groundLevel: Int
 )

@@ -1,6 +1,7 @@
 package edu.tcu.sameepshah.weather
 
 import android.Manifest
+import android.app.Dialog
 import android.content.pm.PackageManager
 import android.icu.util.TimeZone
 import android.location.Location
@@ -31,6 +32,8 @@ import retrofit2.Callback
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.DateFormat
 import java.util.Date
 
@@ -42,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var weatherResponse: WeatherResponse
     private lateinit var geoService: GeoService
     private lateinit var geoResponse: List<Place>
+    private lateinit var dialog: Dialog
 
     private val requestPermissionLauncher =
         registerForActivityResult(
@@ -60,6 +64,8 @@ class MainActivity : AppCompatActivity() {
     private var geoServiceCall: Call<List<Place>>? = null
     private var updateJob: Job? = null
     private var delayJob: Job? = null
+    private var counter: Int = 0
+    private var successfullyRead: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,6 +135,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateLocationAndWeather() {
+        showInProgress()
+        cancellationTokenSource = CancellationTokenSource()
         when (PackageManager.PERMISSION_GRANTED) {
             ContextCompat.checkSelfPermission(
                 this,
@@ -151,6 +159,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         cancelRequests()
         delayJob?.cancel()
+        counter = 0
+        successfullyRead = false
         super.onDestroy()
     }
 
@@ -190,7 +200,7 @@ class MainActivity : AppCompatActivity() {
                     val geoResponseNullable = response.body()
                     if(geoResponseNullable != null) {
                         geoResponse = geoResponseNullable
-                        displayPlace(false)
+                        displayPlace()
                     }
                 }
                 override fun onFailure(p0: Call<List<Place>>, p1: Throwable) {
@@ -201,11 +211,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun displayUpdateFailed() {
-        println("Check your API key.")
+        if (successfullyRead) {
+            counter += 1
+            var timeAgo = "$counter minutes ago"
+            if (counter == 1) {
+                timeAgo = "$counter minute ago"
+            }
+            binding.connectionTv.text = getString(R.string.updated, timeAgo)
+        }
+        dialog.dismiss()
     }
 
-    private fun displayPlace(isSuccess: Boolean) {
-        binding.placeTv.text = getString(R.string.place, geoResponse[0].name, geoResponse[0].state)
+    private fun displayPlace() {
+        val loc = geoResponse[0].country
+        if (geoResponse[0].state != null) {
+            binding.placeTv.text =
+                getString(R.string.place, geoResponse[0].name, geoResponse[0].state)
+        } else {
+            getString(R.string.place, geoResponse[0].name, loc)
+        }
     }
 
     private fun displayWeather() {
@@ -216,8 +240,8 @@ class MainActivity : AppCompatActivity() {
         binding.descriptionTv.text =
             getString(R.string.description,
                 description,
-                weatherResponse.main.temp_max,
-                weatherResponse.main.temp_min)
+                weatherResponse.main.tempMax,
+                weatherResponse.main.tempMin)
 
         val utcInMsSunrise = (weatherResponse.sys.sunrise + weatherResponse.timezone) * 1000L - TimeZone.getDefault().rawOffset
         val utcInMsSunset = (weatherResponse.sys.sunset + weatherResponse.timezone) * 1000L - TimeZone.getDefault().rawOffset
@@ -230,28 +254,53 @@ class MainActivity : AppCompatActivity() {
         val gust = weatherResponse.wind.gust
         binding.windDataTv.text = getString(R.string.wind_data, speed, direction, gust)
 
-        val humidity = weatherResponse.main.humidity
-        val cloudiness = weatherResponse.clouds.all
-        binding.precipitationDataTv.text = getString(R.string.precipitation_data, humidity, cloudiness)
+        val rain = weatherResponse.rain
+        val snow = weatherResponse.snow
 
-        val feelsLike = weatherResponse.main.feels_like
+        if (rain != null){
+            binding.precipitationDataTv.text = getString(R.string.precipitation_time, roundToTwoDec(rain.one_h), "rain")
+        } else if (snow != null){
+            binding.precipitationDataTv.text = getString(R.string.precipitation_time, roundToTwoDec(snow.one_h), "snow")
+        } else {
+            val humidity = weatherResponse.main.humidity
+            val cloudiness = weatherResponse.clouds.all
+            binding.precipitationDataTv.text = getString(R.string.precipitation_data, humidity, cloudiness)
+        }
+
+        val feelsLike = weatherResponse.main.feelsLike
         val visibility = weatherResponse.visibility
         val pressure = weatherResponse.main.pressure
         binding.otherDataTv.text = getString(R.string.other_data,
-            feelsLike, metersToMiles(visibility), hpaToinHg(pressure))
+            feelsLike, metersToMiles(visibility), hpaToInHg(pressure))
 
         val icon = "ic_" + weatherResponse.weather[0].icon
-        with(binding) { conditionIv.setImageResource(resources.getIdentifier(icon, "drawable", packageName)) }
+        with(binding) { with(conditionIv) { setImageResource(resources.getIdentifier(icon, "drawable", packageName)) } }
 
         val temp = weatherResponse.main.temp
         binding.temperatureTv.text = getString(R.string.temperature, temp)
+
+        binding.connectionTv.text = getString(R.string.updated, "just now")
+        successfullyRead = true
+        dialog.dismiss()
+        counter = 0
     }
 
     private fun metersToMiles(meters: Int) : Double {
         return (meters / 1609.34)
     }
 
-    private fun hpaToinHg(hpa : Int) : Double {
+    private fun hpaToInHg(hpa : Int) : Double {
         return (hpa / 33.863886666667)
+    }
+
+    private fun roundToTwoDec(input: Double) : String {
+        return BigDecimal(input*0.0393701).setScale(2, RoundingMode.HALF_UP).toString()
+    }
+
+    private fun showInProgress() {
+        this.dialog = Dialog(this)
+        this.dialog.setContentView(R.layout.in_progress)
+        this.dialog.setCancelable(false)
+        this.dialog.show()
     }
 }

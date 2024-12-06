@@ -1,7 +1,7 @@
 package edu.tcu.sameepshah.weather.model
 
 data class WeatherResponse(
-    val coord: Coord,
+    val coordinates: Coord,
     val weather: List<Weather>,
     val main: Main,
     val visibility: Int,
