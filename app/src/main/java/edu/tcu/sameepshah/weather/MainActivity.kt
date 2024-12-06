@@ -23,6 +23,7 @@ import edu.tcu.sameepshah.weather.databinding.ActivityMainBinding
 import edu.tcu.sameepshah.weather.model.Place
 import edu.tcu.sameepshah.weather.model.WeatherResponse
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import retrofit2.Call
@@ -57,6 +58,8 @@ class MainActivity : AppCompatActivity() {
     private var cancellationTokenSource: CancellationTokenSource? = null
     private var weatherServiceCall: Call<WeatherResponse>? = null
     private var geoServiceCall: Call<List<Place>>? = null
+    private var updateJob: Job? = null
+    private var delayJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -107,17 +110,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun cancelRequests() {
         cancellationTokenSource?.cancel()
+        weatherServiceCall?.cancel()
+        geoServiceCall?.cancel()
+        updateJob?.cancel()
     }
 
     private fun updateLocationAndWeatherRepeatedly() {
         // We need to put this in IO call routine as we want to update the data every 15 seconds
         // but that is over the 5 sec limit that causes the app to crash under Android protocol
-        lifecycleScope.launch(Dispatchers.IO) {
+        delayJob = lifecycleScope.launch(Dispatchers.IO) {
             while(true) {
                 // IO cannot deal with UI, so we need to put something in the main call routine
-                launch(Dispatchers.Main) {
-                    updateLocationAndWeather()
-                }
+                updateJob = launch(Dispatchers.Main) { updateLocationAndWeather() }
                 delay(15000)
                 cancelRequests()
             }
@@ -142,6 +146,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        cancelRequests()
+        delayJob?.cancel()
+        super.onDestroy()
     }
 
     private fun updateWeather(location: Location) {
